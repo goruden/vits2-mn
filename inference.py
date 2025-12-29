@@ -29,13 +29,20 @@ _ESPEAK_LIBRARY = 'C:\Program Files\eSpeak NG\libespeak-ng.dll'
 EspeakWrapper.set_library(_ESPEAK_LIBRARY)
 '''
 
-# - paths
+#- paths
 path_to_config = "put_your_config_path_here" # path to .json
 path_to_model = "put_your_model_path_here" # path to G_xxxx.pth
 
 
 #- text input
 input = "I try to get the waiter's attention by blinking in morse code"
+
+
+#- output configs
+speed = 1
+sid = 0
+output_dir = 'output'
+os.makedirs(output_dir, exist_ok=True)
 
 
 # check device
@@ -91,13 +98,6 @@ def langdetector(text):  # from PolyLangVITS
         return text
 
 
-speed = 1
-sid = 0
-output_dir = 'output'
-os.makedirs(output_dir, exist_ok=True)
-speakers = [name for sid, name in enumerate(hps.speakers) if name != "None"]
-
-
 def vcss(inputstr): # single
     fltstr = re.sub(r"[\[\]\(\)\{\}]", "", inputstr)
     #fltstr = langdetector(fltstr) #- optional for cjke/cjks type cleaners
@@ -106,8 +106,7 @@ def vcss(inputstr): # single
     with torch.no_grad():
         x_tst = stn_tst.to(device).unsqueeze(0)
         x_tst_lengths = torch.LongTensor([stn_tst.size(0)]).to(device)
-        audio = net_g.infer(x_tst, x_tst_lengths, noise_scale=.667, noise_scale_w=0.8, length_scale=1 / speed)[0][
-                0, 0].data.cpu().float().numpy()
+        audio = net_g.infer(x_tst, x_tst_lengths, noise_scale=.667, noise_scale_w=0.8, length_scale=1 / speed)[0][0, 0].data.cpu().float().numpy()
     write(f'./{output_dir}/output_{sid}.wav', hps.data.sampling_rate, audio)
     print(f'./{output_dir}/output_{sid}.wav Generated!')
 
@@ -117,14 +116,34 @@ def vcms(inputstr, sid): # multi
     #fltstr = langdetector(fltstr) #- optional for cjke/cjks type cleaners
     stn_tst = get_text(fltstr, hps)
 
-    for idx, speaker in enumerate(speakers):
-        sid = torch.LongTensor([idx]).to(device)
+    sid_ = torch.LongTensor([sid]).to(device)
+    with torch.no_grad():
+        x_tst = stn_tst.to(device).unsqueeze(0)
+        x_tst_lengths = torch.LongTensor([stn_tst.size(0)]).to(device)
+        audio = net_g.infer(x_tst, x_tst_lengths, sid=sid_, noise_scale=.667, noise_scale_w=0.8, length_scale=1 / speed)[0][0, 0].data.cpu().float().numpy()
+    write(f'{output_dir}/{sid}.wav', hps.data.sampling_rate, audio)
+    print(f'{output_dir}/{sid}.wav Generated!')
+
+
+def vcms_all(inputstr): # multi - enumerates all speakers
+    fltstr = re.sub(r"[\[\]\(\)\{\}]", "", inputstr)
+    #fltstr = langdetector(fltstr) #- optional for cjke/cjks type cleaners
+    stn_tst = get_text(fltstr, hps)
+
+    try:
+        speakers = [name for idx, name in enumerate(hps.speakers) if name != "None"] #- raises error when hps.speakers does not exist in config
+    except:
+        speakers = list(range(hps.data.n_speakers))
+
+    for sid in range(hps.data.n_speakers):
+        sid_ = torch.LongTensor([sid]).to(device)
         with torch.no_grad():
             x_tst = stn_tst.to(device).unsqueeze(0)
             x_tst_lengths = torch.LongTensor([stn_tst.size(0)]).to(device)
-            audio = net_g.infer(x_tst, x_tst_lengths, sid=sid, noise_scale=.667, noise_scale_w=0.8, length_scale=1 / speed)[0][0,0].data.cpu().float().numpy()
-        write(f'{output_dir}/{speaker}.wav', hps.data.sampling_rate, audio)
-        print(f'{output_dir}/{speaker}.wav Generated!')
+            audio = net_g.infer(x_tst, x_tst_lengths, sid=sid_, noise_scale=.667, noise_scale_w=0.8, length_scale=1 / speed)[0][0, 0].data.cpu().float().numpy()
+
+        write(f'{output_dir}/{speakers[sid]}.wav', hps.data.sampling_rate, audio)
+        print(f'{output_dir}/{speakers[sid]}.wav Generated!')
 
 
 def ex_voice_conversion(sid_tgt): # dummy - TODO : further work
